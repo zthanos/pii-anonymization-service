@@ -118,9 +118,9 @@ class StructuredAnonymizerServicerImpl(StructuredAnonymizerServicer):
         """
         Bidirectional streaming RPC for anonymizing structured records.
         
-        Processes requests in batches with concurrent batch processing.
-        Collects requests into batches, processes multiple batches concurrently,
-        then yields responses in order.
+        Processes requests in batches with concurrent batch processing and
+        true parallel response streaming. Responses are streamed immediately
+        as each batch completes, maximizing throughput.
 
         Args:
             request_iterator: Stream of anonymization requests
@@ -129,13 +129,13 @@ class StructuredAnonymizerServicerImpl(StructuredAnonymizerServicer):
         Yields:
             AnonymizeResponse for each processed record
         """
-        # Use a queue to maintain order while processing batches concurrently
+        # Use unbounded queue for maximum throughput
         response_queue = asyncio.Queue()
-        semaphore = asyncio.Semaphore(self.max_concurrent // self.batch_size)  # Limit concurrent batches
+        semaphore = asyncio.Semaphore(self.max_concurrent // self.batch_size)
         active_tasks = set()
         
         async def process_batch_with_semaphore(batch_records, batch_requests):
-            """Process a batch with concurrency limit."""
+            """Process a batch and stream responses immediately."""
             async with semaphore:
                 async for response in self._process_anonymize_batch(batch_records, batch_requests):
                     await response_queue.put(response)
@@ -164,10 +164,10 @@ class StructuredAnonymizerServicerImpl(StructuredAnonymizerServicer):
                     batch.append(record)
                     batch_requests.append(request)
                     
-                    # Process batch when full
+                    # Process batch when full (transfer ownership, no copy)
                     if len(batch) >= self.batch_size:
                         task = asyncio.create_task(
-                            process_batch_with_semaphore(batch.copy(), batch_requests.copy())
+                            process_batch_with_semaphore(batch, batch_requests)
                         )
                         active_tasks.add(task)
                         task.add_done_callback(active_tasks.discard)
@@ -186,17 +186,16 @@ class StructuredAnonymizerServicerImpl(StructuredAnonymizerServicer):
                 # Wait for all batch tasks to complete
                 if active_tasks:
                     await asyncio.gather(*active_tasks, return_exceptions=True)
-                # Signal that all requests have been processed
+                # Signal completion with sentinel
                 await response_queue.put(None)
         
         # Start consuming requests in background
         consumer_task = asyncio.create_task(consume_requests())
         
-        # Yield responses as they complete
+        # Stream responses as they arrive (true parallel streaming)
         while True:
             response = await response_queue.get()
             if response is None:
-                # All requests processed
                 break
             yield response
         

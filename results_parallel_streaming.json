@@ -1,0 +1,14 @@
+{
+  "anonymize": {
+    "operation": "anonymize",
+    "total_records": 10000,
+    "execution_time_seconds": 3.196096799998486,
+    "throughput_records_per_sec": 3128.8163737733903,
+    "latency_p50_ms": 1520.2825000014855,
+    "latency_p95_ms": 2993.359275001421,
+    "latency_p99_ms": 3085.4097230023763,
+    "latency_p999_ms": 3088.714191302108,
+    "errors": 0,
+    "success_rate": 100.0
+  }
+}

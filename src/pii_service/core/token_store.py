@@ -1,18 +1,19 @@
 """Redis-based token storage with connection pooling and retry logic."""
 
 from typing import List, Optional, Dict
+from dataclasses import dataclass
 import structlog
 from redis.asyncio import Redis, ConnectionPool
 from redis.asyncio.retry import Retry
 from redis.backoff import ExponentialBackoff
 from tenacity import retry, stop_after_attempt, wait_exponential
-from pydantic import BaseModel
 
 
 logger = structlog.get_logger()
 
 
-class TokenMapping(BaseModel):
+@dataclass
+class TokenMapping:
     """Mapping of token to encrypted value for batch operations.
     
     Attributes:
@@ -21,7 +22,6 @@ class TokenMapping(BaseModel):
         encrypted_value: AES-256-GCM encrypted PII value
         ttl_seconds: Time-to-live in seconds (0 = no expiry)
     """
-
     system_id: str
     token: str
     encrypted_value: bytes
@@ -123,31 +123,60 @@ class TokenStore:
             raise
 
     async def store_batch(self, mappings: List[TokenMapping]) -> None:
-        """Store multiple tokens using Redis pipeline for efficiency.
+        """Store multiple tokens using optimized Redis operations.
         
-        Pipeline reduces round-trips from N to 1, significantly improving performance
-        for batch operations.
+        Uses Lua script for atomic MSET with TTL, significantly reducing
+        the number of Redis commands from 80,000+ to just a few.
         
         Args:
             mappings: List of TokenMapping objects
             
         Raises:
-            Exception: If pipeline execution fails
+            Exception: If operation fails
         """
         if not mappings:
             return
 
         try:
-            async with self.redis.pipeline(transaction=False) as pipe:
-                for mapping in mappings:
-                    key = self.build_key(mapping.system_id, mapping.token)
+            # Group mappings by TTL for efficient processing
+            ttl_groups: Dict[int, List[TokenMapping]] = {}
+            for mapping in mappings:
+                ttl = mapping.ttl_seconds
+                if ttl not in ttl_groups:
+                    ttl_groups[ttl] = []
+                ttl_groups[ttl].append(mapping)
 
-                    if mapping.ttl_seconds > 0:
-                        pipe.setex(key, mapping.ttl_seconds, mapping.encrypted_value)
-                    else:
-                        pipe.set(key, mapping.encrypted_value)
-
-                await pipe.execute()
+            # Process each TTL group
+            for ttl, group in ttl_groups.items():
+                if ttl > 0:
+                    # Use Lua script for atomic MSET with EXPIRE
+                    # This reduces 2N operations (SET + EXPIRE) to 1 operation
+                    lua_script = """
+                    local ttl = ARGV[1]
+                    for i = 2, #ARGV, 2 do
+                        redis.call('SET', ARGV[i], ARGV[i+1], 'EX', ttl)
+                    end
+                    return #ARGV / 2 - 1
+                    """
+                    
+                    # Build arguments: [ttl, key1, val1, key2, val2, ...]
+                    args = [str(ttl)]
+                    for mapping in group:
+                        key = self.build_key(mapping.system_id, mapping.token)
+                        args.append(key)
+                        args.append(mapping.encrypted_value)
+                    
+                    # Execute Lua script
+                    await self.redis.eval(lua_script, 0, *args)
+                else:
+                    # No TTL - use MSET
+                    mset_dict = {}
+                    for mapping in group:
+                        key = self.build_key(mapping.system_id, mapping.token)
+                        mset_dict[key] = mapping.encrypted_value
+                    
+                    if mset_dict:
+                        await self.redis.mset(mset_dict)
 
         except Exception as e:
             self.logger.error(

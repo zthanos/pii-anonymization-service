@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package pii.v2;
+
+// Service for structured data anonymization and de-anonymization (V2 - Batch API)
+service StructuredAnonymizerV2 {
+  // Batch anonymization - processes multiple records in a single request
+  rpc AnonymizeBatch(BatchAnonymizeRequest) returns (BatchAnonymizeResponse);
+  
+  // Batch de-anonymization - processes multiple records in a single request
+  rpc DeanonymizeBatch(BatchDeanonymizeRequest) returns (BatchDeanonymizeResponse);
+  
+  // Streaming batch anonymization - for very large datasets
+  rpc AnonymizeBatchStream(stream BatchAnonymizeRequest) returns (stream BatchAnonymizeResponse);
+}
+
+// Batch request for anonymizing multiple records
+message BatchAnonymizeRequest {
+  // System identifier for policy lookup
+  string system_id = 1;
+  
+  // Batch of records to anonymize (typically 200-1000 records)
+  repeated RecordItem records = 2;
+}
+
+// Single record item in a batch
+message RecordItem {
+  // Unique identifier for this record (for correlation)
+  string record_id = 1;
+  
+  // Raw JSON bytes (not string) - avoids double serialization
+  // Use orjson.dumps() to create, orjson.loads() to parse
+  bytes record_data = 2;
+}
+
+// Batch response with results for all records
+message BatchAnonymizeResponse {
+  // Results for each record in the batch
+  repeated RecordResult results = 1;
+  
+  // Batch-level statistics (optional)
+  BatchStats stats = 2;
+}
+
+// Result for a single record
+message RecordResult {
+  // Record identifier from the request
+  string record_id = 1;
+  
+  // Raw JSON bytes of anonymized record (not string)
+  bytes anonymized_data = 2;
+  
+  // List of generated token IDs
+  repeated string token_ids = 3;
+  
+  // Error message if anonymization failed (empty if successful)
+  string error = 4;
+}
+
+// Batch-level statistics
+message BatchStats {
+  // Number of records successfully processed
+  int32 success_count = 1;
+  
+  // Number of records that failed
+  int32 error_count = 2;
+  
+  // Total processing time in milliseconds
+  int64 processing_time_ms = 3;
+}
+
+// Batch request for de-anonymizing multiple records
+message BatchDeanonymizeRequest {
+  // System identifier for policy lookup
+  string system_id = 1;
+  
+  // Batch of records to de-anonymize
+  repeated RecordItem records = 2;
+}
+
+// Batch response for de-anonymization
+message BatchDeanonymizeResponse {
+  // Results for each record in the batch
+  repeated DeanonymizeResult results = 1;
+  
+  // Batch-level statistics (optional)
+  BatchStats stats = 2;
+}
+
+// Result for a single de-anonymized record
+message DeanonymizeResult {
+  // Record identifier from the request
+  string record_id = 1;
+  
+  // Raw JSON bytes of de-anonymized record (not string)
+  bytes deanonymized_data = 2;
+  
+  // Error message if de-anonymization failed (empty if successful)
+  string error = 3;
+}

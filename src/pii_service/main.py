@@ -15,6 +15,7 @@ from .core.unstructured_tokenizer import UnstructuredTokenizer
 from .core.llm_client import LLMClient
 from .api.app import create_app
 from .api.grpc_server import create_grpc_server, start_grpc_server, stop_grpc_server
+from .api.grpc_server_v2 import serve_v2
 from .utils.logging import setup_logging
 
 logger = structlog.get_logger(__name__)
@@ -130,20 +131,16 @@ async def run_servers():
             unstructured_tokenizer=unstructured_tokenizer,
         )
 
-        # Create gRPC server
-        grpc_server = await create_grpc_server(
-            structured_tokenizer=structured_tokenizer,
-            port=settings.GRPC_PORT,
-            max_workers=settings.GRPC_MAX_WORKERS,
-            max_concurrent_requests=settings.GRPC_MAX_CONCURRENT_REQUESTS,
-            batch_size=settings.GRPC_BATCH_SIZE,
-            ssl_keyfile=settings.SSL_KEYFILE,
-            ssl_certfile=settings.SSL_CERTFILE,
-            ssl_ca_certs=settings.SSL_CA_CERTS,
+        # Start V2 gRPC server (serves both V1 and V2 APIs) in background
+        grpc_task = asyncio.create_task(
+            serve_v2(
+                structured_tokenizer=structured_tokenizer,
+                port=settings.GRPC_PORT,
+                max_workers=settings.GRPC_MAX_WORKERS,
+                max_concurrent=settings.GRPC_MAX_CONCURRENT_REQUESTS,
+                batch_size=settings.GRPC_BATCH_SIZE,
+            )
         )
-
-        # Start gRPC server
-        await start_grpc_server(grpc_server)
 
         # Start FastAPI server (this will block until shutdown)
         await start_fastapi_server(app, host="0.0.0.0", port=settings.HTTP_PORT)
