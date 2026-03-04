@@ -394,6 +394,28 @@ Benchmark results will be saved to:
    export REDIS_POOL_SIZE=100
    ```
 
+## Documentation
+
+For detailed documentation about the optimization journey, implementation details, and performance analysis, see the [Documentation Wiki](./wiki/).
+
+### Quick Links
+- [Optimization Journey](./wiki/optimization/OPTIMIZATION_JOURNEY_COMPLETE.md) - Complete performance optimization story (3.5k → 59k rec/sec)
+- [Phase 1: Batch Messages](./wiki/optimization/PHASE_1_COMPLETE.md) - 5.2x improvement through batching
+- [Phase 3: Multi-Instance](./wiki/optimization/PHASE_3_MULTI_INSTANCE_COMPLETE.md) - 3.2x improvement through horizontal scaling
+- [gRPC Optimization Guide](./wiki/implementation/GRPC_OPTIMIZATION_GUIDE.md) - gRPC tuning best practices
+- [CQRS Analysis](./wiki/analysis/CQRS_ANALYSIS.md) - Architectural pattern evaluation
+
+## Data Directory
+
+Test data, benchmark results, and profiling data are organized in the [data/](./data/) directory. See [data/README.md](./data/README.md) for details.
+
+- `data/benchmark_results/` - Performance benchmark results
+- `data/test_data/` - Test datasets (NDJSON)
+- `data/test_results/` - Test execution results
+- `data/profiling/` - Performance profiling data
+
+**Note:** The data directory is git-ignored and files are generated during testing/benchmarking.
+
 ## License
 
 [Your License Here]

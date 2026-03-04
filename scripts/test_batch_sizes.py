@@ -11,7 +11,7 @@ from pathlib import Path
 BATCH_SIZES = [50, 100, 200, 500]
 
 # Test data file
-TEST_FILE = "test_data_10k.ndjson"
+TEST_FILE = "data/test_data/test_data_10k.ndjson"
 
 # Results
 results = []
@@ -153,12 +153,12 @@ print(f"Best throughput: {best['throughput']:.2f} records/sec")
 print()
 
 # Save detailed results
-with open("batch_size_optimization_results.json", "w") as f:
+with open("data/benchmark_results/batch_size_optimization_results.json", "w") as f:
     json.dump({
         "test_file": TEST_FILE,
         "results": results,
         "best_config": best
     }, f, indent=2)
 
-print("Detailed results saved to: batch_size_optimization_results.json")
+print("Detailed results saved to: data/benchmark_results/batch_size_optimization_results.json")
 print("=" * 60)

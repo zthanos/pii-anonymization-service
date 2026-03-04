@@ -63,9 +63,9 @@ try:
     benchmark_result = subprocess.run(
         [
             "uv", "run", "python", "scripts/benchmark_grpc.py",
-            "-i", "test_data_10k.ndjson",
+            "-i", "data/test_data/test_data_10k.ndjson",
             "-o", "anonymize",
-            "--results-json", "profile_benchmark_results.json"
+            "--results-json", "data/profiling/profile_benchmark_results.json"
         ],
         timeout=120,
         capture_output=True,

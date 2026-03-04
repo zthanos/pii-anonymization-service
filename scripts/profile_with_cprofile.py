@@ -51,7 +51,7 @@ async def profile_anonymization():
     print("Loading test data...")
     import orjson
     records = []
-    with open("test_data_10k.ndjson", "r") as f:
+    with open("data/test_data/test_data_10k.ndjson", "r") as f:
         for line in f:
             if line.strip():
                 records.append(orjson.loads(line))
@@ -74,7 +74,7 @@ async def profile_anonymization():
     
     # Save profile stats
     print("Saving profile stats...")
-    profiler.dump_stats("profile.stats")
+    profiler.dump_stats("data/profiling/profile.stats")
     
     # Print top functions by cumulative time
     print()
@@ -115,11 +115,11 @@ async def profile_anonymization():
     print("=" * 60)
     print("Profile complete!")
     print("=" * 60)
-    print("Stats saved to: profile.stats")
+    print("Stats saved to: data/profiling/profile.stats")
     print("Report saved to: profile_report.txt")
     print()
     print("To view the profile interactively:")
-    print("  python -m pstats profile.stats")
+    print("  python -m pstats data/profiling/profile.stats")
     print()
 
 if __name__ == "__main__":

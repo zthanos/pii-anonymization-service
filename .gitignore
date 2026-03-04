@@ -82,6 +82,13 @@ benchmark_results/
 benchmark_results.json
 benchmark_report.html
 
+# Data directory (test data, results, profiling)
+data/
+*.ndjson
+*.stats
+profile_*.txt
+profile_*.json
+
 # Generated protobuf files
 *_pb2.py
 *_pb2.pyi
