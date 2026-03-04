@@ -111,19 +111,8 @@ class TokenStore:
         try:
             if ttl_seconds > 0:
                 await self.redis.setex(key, ttl_seconds, encrypted_value)
-                self.logger.info(
-                    "stored_token_with_ttl",
-                    system_id=system_id,
-                    token=token[:8],  # Log only prefix for security
-                    ttl_seconds=ttl_seconds,
-                )
             else:
                 await self.redis.set(key, encrypted_value)
-                self.logger.info(
-                    "stored_token_no_expiry",
-                    system_id=system_id,
-                    token=token[:8],
-                )
         except Exception as e:
             self.logger.error(
                 "store_token_failed",
@@ -160,11 +149,6 @@ class TokenStore:
 
                 await pipe.execute()
 
-            self.logger.info(
-                "stored_batch",
-                count=len(mappings),
-                system_id=mappings[0].system_id if mappings else None,
-            )
         except Exception as e:
             self.logger.error(
                 "store_batch_failed",
@@ -201,20 +185,6 @@ class TokenStore:
 
         try:
             value = await self.redis.get(key)
-
-            if value is None:
-                self.logger.debug(
-                    "token_not_found",
-                    system_id=system_id,
-                    token=token[:8],
-                )
-            else:
-                self.logger.debug(
-                    "token_retrieved",
-                    system_id=system_id,
-                    token=token[:8],
-                )
-
             return value
         except Exception as e:
             self.logger.error(
@@ -257,14 +227,6 @@ class TokenStore:
                 values = await pipe.execute()
 
             result = dict(zip(tokens, values))
-
-            found_count = sum(1 for v in values if v is not None)
-            self.logger.info(
-                "retrieved_batch",
-                total=len(tokens),
-                found=found_count,
-                system_id=system_id,
-            )
 
             return result
         except Exception as e:

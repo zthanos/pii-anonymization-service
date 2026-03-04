@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     # Redis configuration
     REDIS_URL: str = "redis://localhost:6379/0"
-    REDIS_POOL_SIZE: int = 50
+    REDIS_POOL_SIZE: int = 200  # Increased for high concurrency
 
     # Policy configuration
     POLICY_PATH: str = "policies/example_policy.yaml"

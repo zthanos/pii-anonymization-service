@@ -1,6 +1,6 @@
 """gRPC servicer implementation for structured data anonymization."""
 
-import json
+import orjson
 import asyncio
 import structlog
 from typing import AsyncIterator
@@ -24,16 +24,18 @@ logger = structlog.get_logger(__name__)
 class StructuredAnonymizerServicerImpl(StructuredAnonymizerServicer):
     """Implementation of the StructuredAnonymizer gRPC service."""
 
-    def __init__(self, structured_tokenizer: StructuredTokenizer, max_concurrent: int = 100):
+    def __init__(self, structured_tokenizer: StructuredTokenizer, max_concurrent: int = 100, batch_size: int = 50):
         """
         Initialize the gRPC servicer.
 
         Args:
             structured_tokenizer: Tokenizer for structured data operations
             max_concurrent: Maximum concurrent requests to process (default: 100)
+            batch_size: Number of records to batch together (default: 50)
         """
         self.structured_tokenizer = structured_tokenizer
         self.max_concurrent = max_concurrent
+        self.batch_size = batch_size
 
     async def _process_anonymize_request(
         self, request: AnonymizeRequest
@@ -50,8 +52,8 @@ class StructuredAnonymizerServicerImpl(StructuredAnonymizerServicer):
         try:
             # Parse JSON record
             try:
-                record = json.loads(request.record_json)
-            except json.JSONDecodeError as e:
+                record = orjson.loads(request.record_json)
+            except orjson.JSONDecodeError as e:
                 logger.error(
                     "grpc_anonymize_json_parse_error",
                     record_id=request.record_id,
@@ -83,18 +85,10 @@ class StructuredAnonymizerServicerImpl(StructuredAnonymizerServicer):
                 operation="anonymize",
             ).inc()
 
-            logger.debug(
-                "grpc_anonymize_success",
-                record_id=request.record_id,
-                system_id=request.system_id,
-                token_count=len(anonymized.token_ids),
-                duration_ms=duration * 1000,
-            )
-
             # Return successful response
             return AnonymizeResponse(
                 record_id=request.record_id,
-                anonymized_json=json.dumps(anonymized.record),
+                anonymized_json=orjson.dumps(anonymized.record).decode(),
                 token_ids=anonymized.token_ids,
                 error="",
             )
@@ -124,8 +118,9 @@ class StructuredAnonymizerServicerImpl(StructuredAnonymizerServicer):
         """
         Bidirectional streaming RPC for anonymizing structured records.
         
-        Processes requests concurrently with a semaphore to limit concurrency.
-        This significantly improves throughput compared to sequential processing.
+        Processes requests in batches with concurrent batch processing.
+        Collects requests into batches, processes multiple batches concurrently,
+        then yields responses in order.
 
         Args:
             request_iterator: Stream of anonymization requests
@@ -134,26 +129,64 @@ class StructuredAnonymizerServicerImpl(StructuredAnonymizerServicer):
         Yields:
             AnonymizeResponse for each processed record
         """
-        # Use a queue to maintain order while processing concurrently
+        # Use a queue to maintain order while processing batches concurrently
         response_queue = asyncio.Queue()
-        semaphore = asyncio.Semaphore(self.max_concurrent)
+        semaphore = asyncio.Semaphore(self.max_concurrent // self.batch_size)  # Limit concurrent batches
         active_tasks = set()
         
-        async def process_with_semaphore(request: AnonymizeRequest):
-            """Process request with concurrency limit."""
+        async def process_batch_with_semaphore(batch_records, batch_requests):
+            """Process a batch with concurrency limit."""
             async with semaphore:
-                response = await self._process_anonymize_request(request)
-                await response_queue.put(response)
+                async for response in self._process_anonymize_batch(batch_records, batch_requests):
+                    await response_queue.put(response)
         
         async def consume_requests():
-            """Consume requests from iterator and create tasks."""
+            """Consume requests from iterator and create batch tasks."""
             try:
+                batch = []
+                batch_requests = []
+                
                 async for request in request_iterator:
-                    task = asyncio.create_task(process_with_semaphore(request))
+                    # Parse JSON record
+                    try:
+                        record = orjson.loads(request.record_json)
+                    except orjson.JSONDecodeError as e:
+                        # Queue error response immediately
+                        await response_queue.put(AnonymizeResponse(
+                            record_id=request.record_id,
+                            anonymized_json="",
+                            token_ids=[],
+                            error=f"Invalid JSON: {str(e)}",
+                        ))
+                        continue
+                    
+                    # Add to batch
+                    batch.append(record)
+                    batch_requests.append(request)
+                    
+                    # Process batch when full
+                    if len(batch) >= self.batch_size:
+                        task = asyncio.create_task(
+                            process_batch_with_semaphore(batch.copy(), batch_requests.copy())
+                        )
+                        active_tasks.add(task)
+                        task.add_done_callback(active_tasks.discard)
+                        batch = []
+                        batch_requests = []
+                
+                # Process remaining records
+                if batch:
+                    task = asyncio.create_task(
+                        process_batch_with_semaphore(batch, batch_requests)
+                    )
                     active_tasks.add(task)
                     task.add_done_callback(active_tasks.discard)
+                
             finally:
-                # Signal that all requests have been submitted
+                # Wait for all batch tasks to complete
+                if active_tasks:
+                    await asyncio.gather(*active_tasks, return_exceptions=True)
+                # Signal that all requests have been processed
                 await response_queue.put(None)
         
         # Start consuming requests in background
@@ -169,10 +202,77 @@ class StructuredAnonymizerServicerImpl(StructuredAnonymizerServicer):
         
         # Wait for consumer to finish
         await consumer_task
+    
+    async def _process_anonymize_batch(
+        self,
+        records: list,
+        requests: list,
+    ) -> AsyncIterator[AnonymizeResponse]:
+        """
+        Process a batch of anonymization requests.
         
-        # Wait for any remaining tasks
-        if active_tasks:
-            await asyncio.gather(*active_tasks, return_exceptions=True)
+        Args:
+            records: List of parsed JSON records
+            requests: List of corresponding AnonymizeRequest objects
+            
+        Yields:
+            AnonymizeResponse for each record in the batch
+        """
+        import time
+        start_time = time.time()
+        
+        # Get system_id from first request (all should have same system_id)
+        system_id = requests[0].system_id
+        
+        try:
+            # Batch anonymize all records
+            results = await self.structured_tokenizer.anonymize_batch(records, system_id)
+            
+            duration = time.time() - start_time
+            
+            # Yield responses for each record
+            for request, result in zip(requests, results):
+                if result.error:
+                    yield AnonymizeResponse(
+                        record_id=request.record_id,
+                        anonymized_json="",
+                        token_ids=[],
+                        error=result.error,
+                    )
+                else:
+                    tokenization_latency_seconds.labels(
+                        system_id=system_id
+                    ).observe(duration / len(records))
+                    
+                    records_processed_total.labels(
+                        system_id=system_id,
+                        operation="anonymize",
+                    ).inc()
+                    
+                    yield AnonymizeResponse(
+                        record_id=request.record_id,
+                        anonymized_json=orjson.dumps(result.record).decode(),
+                        token_ids=result.token_ids,
+                        error="",
+                    )
+        
+        except Exception as e:
+            # Yield error for all records in batch
+            logger.error(
+                "batch_anonymize_error",
+                system_id=system_id,
+                batch_size=len(records),
+                error=str(e),
+                exc_info=True,
+            )
+            
+            for request in requests:
+                yield AnonymizeResponse(
+                    record_id=request.record_id,
+                    anonymized_json="",
+                    token_ids=[],
+                    error=str(e),
+                )
 
     async def _process_deanonymize_request(
         self, request: DeanonymizeRequest
@@ -189,8 +289,8 @@ class StructuredAnonymizerServicerImpl(StructuredAnonymizerServicer):
         try:
             # Parse JSON record
             try:
-                record = json.loads(request.record_json)
-            except json.JSONDecodeError as e:
+                record = orjson.loads(request.record_json)
+            except orjson.JSONDecodeError as e:
                 logger.error(
                     "grpc_deanonymize_json_parse_error",
                     record_id=request.record_id,
@@ -221,17 +321,10 @@ class StructuredAnonymizerServicerImpl(StructuredAnonymizerServicer):
                 operation="deanonymize",
             ).inc()
 
-            logger.debug(
-                "grpc_deanonymize_success",
-                record_id=request.record_id,
-                system_id=request.system_id,
-                duration_ms=duration * 1000,
-            )
-
             # Return successful response
             return DeanonymizeResponse(
                 record_id=request.record_id,
-                deanonymized_json=json.dumps(deanonymized.record),
+                deanonymized_json=orjson.dumps(deanonymized.record).decode(),
                 error="",
             )
 

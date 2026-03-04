@@ -341,12 +341,6 @@ class StructuredTokenizer:
             # Add anonymization flag
             anonymized_record['_pii_anonymized'] = True
 
-            self.logger.info(
-                "record_anonymized",
-                system_id=system_id,
-                token_count=len(token_ids),
-            )
-
             return AnonymizedRecord(
                 record=anonymized_record,
                 token_ids=token_ids,
@@ -372,6 +366,160 @@ class StructuredTokenizer:
                 error=str(e),
                 _pii_anonymized=False,
             )
+
+    async def anonymize_batch(
+        self,
+        records: List[dict],
+        system_id: str,
+    ) -> List[AnonymizedRecord]:
+        """
+        Anonymize multiple records in a single batch operation.
+        
+        This method processes multiple records together and uses a single
+        Redis pipeline for all token storage operations, significantly
+        reducing network overhead compared to processing records individually.
+        
+        Args:
+            records: List of JSON objects with PII fields
+            system_id: System identifier for policy lookup
+            
+        Returns:
+            List of AnonymizedRecord results (one per input record)
+            
+        Example:
+            >>> records = [
+            ...     {"email": "user1@example.com", "name": "John"},
+            ...     {"email": "user2@example.com", "name": "Jane"}
+            ... ]
+            >>> results = await tokenizer.anonymize_batch(records, "customer_db")
+            >>> len(results)
+            2
+        """
+        try:
+            # Get system configuration once for all records
+            config = self.policy_loader.get_system_config(system_id)
+            encryption_key = self.policy_loader.get_encryption_key(system_id)
+
+            if not config.structured:
+                raise ValueError(
+                    f"System '{system_id}' does not have structured configuration"
+                )
+
+            # Collect all token mappings from all records
+            all_token_mappings = []
+            results = []
+
+            # Process each record
+            for record in records:
+                try:
+                    # Create a copy of the record to modify
+                    anonymized_record = record.copy()
+                    token_ids = []
+
+                    # Process each PII field
+                    for field_config in config.structured.pii_fields:
+                        try:
+                            # Extract field value
+                            value = self.extract_field_value(record, field_config.name)
+
+                            # Handle null values
+                            if value is None:
+                                if not field_config.nullable:
+                                    raise ValueError(
+                                        f"Field '{field_config.name}' is null but not nullable"
+                                    )
+                                # Skip null nullable fields
+                                continue
+
+                            # Generate token
+                            token = self.generate_token(
+                                str(value),
+                                field_config.deterministic,
+                                encryption_key,
+                                field_config.token_format,
+                                field_config.token_prefix,
+                            )
+
+                            # Encrypt original value
+                            encrypted_value = self.crypto_engine.encrypt(
+                                str(value),
+                                encryption_key,
+                            )
+
+                            # Prepare for batch storage
+                            all_token_mappings.append(TokenMapping(
+                                system_id=system_id,
+                                token=token,
+                                encrypted_value=encrypted_value,
+                                ttl_seconds=config.structured.token_ttl_seconds,
+                            ))
+
+                            # Replace field value with token
+                            self.set_field_value(anonymized_record, field_config.name, token)
+                            token_ids.append(token)
+
+                        except Exception as e:
+                            # Log field-level error but continue processing
+                            self.logger.warning(
+                                "field_anonymization_failed",
+                                system_id=system_id,
+                                field=field_config.name,
+                                error=str(e),
+                            )
+                            # Re-raise to fail the entire record
+                            raise ValueError(
+                                f"Failed to anonymize field '{field_config.name}': {str(e)}"
+                            )
+
+                    # Add anonymization flag
+                    anonymized_record['_pii_anonymized'] = True
+
+                    results.append(AnonymizedRecord(
+                        record=anonymized_record,
+                        token_ids=token_ids,
+                        error=None,
+                        _pii_anonymized=True,
+                    ))
+
+                except Exception as e:
+                    # Return error record for this record
+                    error_record = record.copy()
+                    error_record['_pii_anonymized'] = False
+
+                    results.append(AnonymizedRecord(
+                        record=error_record,
+                        token_ids=[],
+                        error=str(e),
+                        _pii_anonymized=False,
+                    ))
+
+            # Single batch write to Redis for all tokens from all records
+            if all_token_mappings:
+                await self.token_store.store_batch(all_token_mappings)
+
+            return results
+
+        except Exception as e:
+            # Return error for all records
+            self.logger.error(
+                "batch_anonymization_failed",
+                system_id=system_id,
+                error=str(e),
+            )
+
+            # Return error records for all inputs
+            error_results = []
+            for record in records:
+                error_record = record.copy()
+                error_record['_pii_anonymized'] = False
+                error_results.append(AnonymizedRecord(
+                    record=error_record,
+                    token_ids=[],
+                    error=str(e),
+                    _pii_anonymized=False,
+                ))
+
+            return error_results
 
     async def anonymize_stream(
         self,
@@ -519,13 +667,6 @@ class StructuredTokenizer:
 
             # Remove _pii_anonymized flag if present
             deanonymized_record.pop('_pii_anonymized', None)
-
-            self.logger.info(
-                "record_deanonymized",
-                system_id=system_id,
-                token_count=len(tokens_to_retrieve),
-                error_count=len(errors),
-            )
 
             return DeanonymizedRecord(
                 record=deanonymized_record,
