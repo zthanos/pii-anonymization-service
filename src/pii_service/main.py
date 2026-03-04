@@ -136,6 +136,7 @@ async def run_servers():
             port=settings.GRPC_PORT,
             max_workers=settings.GRPC_MAX_WORKERS,
             max_concurrent_requests=settings.GRPC_MAX_CONCURRENT_REQUESTS,
+            batch_size=settings.GRPC_BATCH_SIZE,
             ssl_keyfile=settings.SSL_KEYFILE,
             ssl_certfile=settings.SSL_CERTFILE,
             ssl_ca_certs=settings.SSL_CA_CERTS,

@@ -21,6 +21,7 @@ async def create_grpc_server(
     port: int = 50051,
     max_workers: int = 50,
     max_concurrent_requests: int = 1000,
+    batch_size: int = 50,
     ssl_keyfile: Optional[str] = None,
     ssl_certfile: Optional[str] = None,
     ssl_ca_certs: Optional[str] = None,
@@ -33,6 +34,7 @@ async def create_grpc_server(
         port: Port to listen on (default: 50051)
         max_workers: Maximum number of worker threads (default: 50)
         max_concurrent_requests: Maximum concurrent requests per stream (default: 1000)
+        batch_size: Number of records to batch together (default: 50)
         ssl_keyfile: Path to SSL private key file (optional)
         ssl_certfile: Path to SSL certificate file (optional)
         ssl_ca_certs: Path to SSL CA certificates file (optional)
@@ -62,7 +64,8 @@ async def create_grpc_server(
     # Add servicer to server with concurrency limit
     servicer = StructuredAnonymizerServicerImpl(
         structured_tokenizer,
-        max_concurrent=max_concurrent_requests
+        max_concurrent=max_concurrent_requests,
+        batch_size=batch_size
     )
     add_StructuredAnonymizerServicer_to_server(servicer, server)
 
@@ -96,6 +99,7 @@ async def create_grpc_server(
         port=port,
         max_workers=max_workers,
         max_concurrent_requests=max_concurrent_requests,
+        batch_size=batch_size,
         max_message_size_mb=MAX_MESSAGE_LENGTH // (1024 * 1024),
     )
 

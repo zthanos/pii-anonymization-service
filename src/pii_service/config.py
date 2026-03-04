@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     GRPC_PORT: int = 50051
     GRPC_MAX_WORKERS: int = 50
     GRPC_MAX_CONCURRENT_REQUESTS: int = 1000
+    GRPC_BATCH_SIZE: int = 50
 
     # TLS configuration (optional)
     SSL_KEYFILE: Optional[str] = None
