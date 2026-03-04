@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package pii;
+
+// Service for structured data anonymization and de-anonymization
+service StructuredAnonymizer {
+  // Bidirectional streaming RPC for anonymizing structured records
+  rpc Anonymize(stream AnonymizeRequest) returns (stream AnonymizeResponse);
+  
+  // Bidirectional streaming RPC for de-anonymizing structured records
+  rpc Deanonymize(stream DeanonymizeRequest) returns (stream DeanonymizeResponse);
+}
+
+// Request message for anonymizing a single record
+message AnonymizeRequest {
+  // System identifier for policy lookup
+  string system_id = 1;
+  
+  // Unique identifier for this record (for correlation)
+  string record_id = 2;
+  
+  // JSON-encoded record containing PII fields
+  string record_json = 3;
+}
+
+// Response message for anonymized record
+message AnonymizeResponse {
+  // Record identifier from the request
+  string record_id = 1;
+  
+  // JSON-encoded anonymized record with tokens
+  string anonymized_json = 2;
+  
+  // List of generated token IDs
+  repeated string token_ids = 3;
+  
+  // Error message if anonymization failed (empty if successful)
+  string error = 4;
+}
+
+// Request message for de-anonymizing a single record
+message DeanonymizeRequest {
+  // System identifier for policy lookup
+  string system_id = 1;
+  
+  // Unique identifier for this record (for correlation)
+  string record_id = 2;
+  
+  // JSON-encoded record containing tokens
+  string record_json = 3;
+}
+
+// Response message for de-anonymized record
+message DeanonymizeResponse {
+  // Record identifier from the request
+  string record_id = 1;
+  
+  // JSON-encoded de-anonymized record with original PII values
+  string deanonymized_json = 2;
+  
+  // Error message if de-anonymization failed (empty if successful)
+  string error = 3;
+}

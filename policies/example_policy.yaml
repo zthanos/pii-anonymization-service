@@ -1,0 +1,82 @@
+# Example PII Anonymization Service Policy Configuration
+# This file defines PII fields, encryption keys, and tokenization rules per system
+
+systems:
+  # Customer database system configuration
+  - system_id: "customer_db"
+    # Encryption key reference - can be env:VAR_NAME or file:/path/to/key
+    # Generate a key using: python scripts/generate_key.py
+    encryption_key_ref: "env:CUSTOMER_DB_KEY"
+    
+    # Structured data configuration
+    structured:
+      # List of PII fields to tokenize
+      pii_fields:
+        # Simple field - email address
+        - name: "email"
+          deterministic: true  # Same email always gets same token
+          token_format: "uuid"
+          nullable: false
+        
+        # Nested field using dot-notation
+        - name: "address.street"
+          deterministic: false  # Different token each time
+          token_format: "prefixed"
+          token_prefix: "ADDR_"
+          nullable: true
+        
+        # SSN with deterministic tokenization
+        - name: "ssn"
+          deterministic: true
+          token_format: "deterministic"  # HMAC-SHA256
+          nullable: false
+        
+        # Phone number
+        - name: "phone"
+          deterministic: false
+          token_format: "uuid"
+          nullable: true
+      
+      # Token time-to-live in seconds (0 = never expire)
+      token_ttl_seconds: 86400  # 24 hours
+    
+    # Unstructured data configuration
+    unstructured:
+      # LLM model for entity extraction
+      llm_model: "claude-3-haiku-20240307"
+      
+      # Entity types to extract and tokenize
+      entity_types:
+        - "PERSON"
+        - "EMAIL"
+        - "PHONE"
+        - "SSN"
+        - "ADDRESS"
+      
+      # Rate limiting (requests per minute per client)
+      rate_limit_per_minute: 100
+      
+      # Maximum text length (characters)
+      max_text_length: 50000
+  
+  # Analytics database system configuration
+  - system_id: "analytics_db"
+    encryption_key_ref: "env:ANALYTICS_DB_KEY"
+    
+    structured:
+      pii_fields:
+        - name: "user_id"
+          deterministic: true
+          token_format: "deterministic"
+          nullable: false
+        
+        - name: "email"
+          deterministic: true
+          token_format: "uuid"
+          nullable: false
+      
+      # Never expire tokens for analytics
+      token_ttl_seconds: 0
+
+# Default system to use when client doesn't specify X-System-ID header
+default_system: "customer_db"

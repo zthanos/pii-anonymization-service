@@ -1,0 +1,474 @@
+openapi: 3.0.3
+info:
+  title: PII Anonymization Service
+  description: |
+    High-performance microservice for tokenization and de-tokenization of PII in structured and unstructured data.
+    
+    ## Features
+    - **Structured Data**: Anonymize JSON records with field-level PII tokenization
+    - **Unstructured Text**: LLM-assisted entity extraction and tokenization
+    - **High Performance**: 50,000+ records/second via gRPC streaming
+    - **Security**: AES-256-GCM encryption, no plaintext PII logging
+    - **Observability**: Prometheus metrics, structured logging, health checks
+    
+    ## Authentication
+    All endpoints (except /health and /metrics) require Bearer token authentication:
+    ```
+    Authorization: Bearer <api_key>
+    ```
+  version: 1.0.0
+  contact:
+    name: PII Service Team
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+  - url: https://api.example.com
+    description: Production server
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Structured Data
+    description: Anonymization and de-anonymization of structured JSON records
+  - name: Unstructured Text
+    description: Anonymization and de-anonymization of unstructured text
+  - name: Admin
+    description: Administrative endpoints
+  - name: Health
+    description: Health and monitoring endpoints
+
+paths:
+  /structured/anonymize:
+    post:
+      tags:
+        - Structured Data
+      summary: Anonymize structured data records
+      description: |
+        Anonymizes a list of JSON records by replacing PII fields with tokens.
+        Returns NDJSON (newline-delimited JSON) stream for efficient processing.
+        
+        **Performance**: Supports streaming for high throughput processing.
+      operationId: anonymizeStructured
+      parameters:
+        - $ref: '#/components/parameters/SystemId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+              example:
+                - email: john.doe@example.com
+                  name: John Doe
+                  ssn: "123-45-6789"
+                  address:
+                    street: 123 Main St
+                    city: San Francisco
+                    state: CA
+                    zip: "94102"
+                  phone: "+1-555-1234"
+                  user_id: user_12345
+      responses:
+        '200':
+          description: Successfully anonymized records (NDJSON stream)
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+                description: Newline-delimited JSON objects
+              example: |
+                {"record":{"email":"3564ba6e-bf9b-440b-9625-ec07ca13dfd3","name":"John Doe","ssn":"dd005d9cddcf5ca527070839db8cb186cb833599d4b1cc81fff75c1806501e47","address":{"street":"ADDR_cd319333-c810-4fe7-8cb6-f82ed5ed8b68","city":"San Francisco","state":"CA","zip":"94102"},"phone":"44928a6e-478b-4bfe-b731-eea8575c333f","user_id":"user_12345","_pii_anonymized":true},"token_ids":["3564ba6e-bf9b-440b-9625-ec07ca13dfd3","ADDR_cd319333-c810-4fe7-8cb6-f82ed5ed8b68","dd005d9cddcf5ca527070839db8cb186cb833599d4b1cc81fff75c1806501e47","44928a6e-478b-4bfe-b731-eea8575c333f"],"error":null,"_pii_anonymized":true}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /structured/deanonymize:
+    post:
+      tags:
+        - Structured Data
+      summary: De-anonymize structured data records
+      description: |
+        Restores original PII values in tokenized records by retrieving and decrypting
+        values from Redis. Returns NDJSON stream.
+        
+        **Performance**: <3ms p95 latency per record.
+      operationId: deanonymizeStructured
+      parameters:
+        - $ref: '#/components/parameters/SystemId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+              example:
+                - email: 3564ba6e-bf9b-440b-9625-ec07ca13dfd3
+                  name: John Doe
+                  ssn: dd005d9cddcf5ca527070839db8cb186cb833599d4b1cc81fff75c1806501e47
+                  address:
+                    street: ADDR_cd319333-c810-4fe7-8cb6-f82ed5ed8b68
+                    city: San Francisco
+                    state: CA
+                    zip: "94102"
+                  phone: 44928a6e-478b-4bfe-b731-eea8575c333f
+                  user_id: user_12345
+                  _pii_anonymized: true
+      responses:
+        '200':
+          description: Successfully de-anonymized records (NDJSON stream)
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+                description: Newline-delimited JSON objects
+              example: |
+                {"record":{"email":"john.doe@example.com","name":"John Doe","ssn":"123-45-6789","address":{"street":"123 Main St","city":"San Francisco","state":"CA","zip":"94102"},"phone":"+1-555-1234","user_id":"user_12345"},"errors":{}}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /unstructured/anonymize:
+    post:
+      tags:
+        - Unstructured Text
+      summary: Anonymize unstructured text
+      description: |
+        Extracts PII entities from text using LLM and replaces them with tokens.
+        Supports returning an entity map for de-anonymization.
+        
+        **Rate Limiting**: Configurable per-client rate limits for LLM API calls.
+      operationId: anonymizeUnstructured
+      parameters:
+        - $ref: '#/components/parameters/SystemId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnstructuredRequest'
+      responses:
+        '200':
+          description: Successfully anonymized text
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnstructuredResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  detail:
+                    type: string
+                    example: Rate limit exceeded
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /unstructured/deanonymize:
+    post:
+      tags:
+        - Unstructured Text
+      summary: De-anonymize unstructured text
+      description: |
+        Replaces tokens in text with original PII values by retrieving from Redis.
+        Unknown or expired tokens are left unchanged.
+      operationId: deanonymizeUnstructured
+      parameters:
+        - $ref: '#/components/parameters/SystemId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeanonymizeRequest'
+      responses:
+        '200':
+          description: Successfully de-anonymized text
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeanonymizeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: |
+        Returns service health status and policy version.
+        Checks Redis connectivity with 2-second timeout.
+        
+        **No authentication required**.
+      operationId: healthCheck
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: unhealthy
+                policy_version: "1234567890"
+
+  /metrics:
+    get:
+      tags:
+        - Health
+      summary: Prometheus metrics
+      description: |
+        Returns Prometheus-formatted metrics for monitoring.
+        
+        **Metrics include**:
+        - `records_processed_total`: Counter of processed records
+        - `tokenization_latency_seconds`: Histogram of tokenization latency
+        - `redis_operation_latency_seconds`: Histogram of Redis operation latency
+        - `llm_api_calls_total`: Counter of LLM API calls
+        - `llm_api_errors_total`: Counter of LLM API errors
+        
+        **No authentication required**.
+      operationId: getMetrics
+      security: []
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |
+                # HELP records_processed_total Total number of records processed
+                # TYPE records_processed_total counter
+                records_processed_total{operation="anonymize",system_id="customer_db"} 1000.0
+                # HELP tokenization_latency_seconds Tokenization operation latency
+                # TYPE tokenization_latency_seconds histogram
+                tokenization_latency_seconds_bucket{le="0.001",system_id="customer_db"} 500.0
+
+  /admin/policy/reload:
+    post:
+      tags:
+        - Admin
+      summary: Reload policy configuration
+      description: |
+        Reloads policy configuration from disk without restarting the service.
+        If reload fails, the current policy is retained.
+        
+        **Hot reload**: Service continues processing requests during reload.
+      operationId: reloadPolicy
+      responses:
+        '200':
+          description: Policy reload result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyReloadResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API Key
+      description: API key for authentication
+
+  parameters:
+    SystemId:
+      name: X-System-ID
+      in: header
+      required: true
+      description: System identifier for policy lookup (e.g., "customer_db", "analytics_db")
+      schema:
+        type: string
+      example: customer_db
+
+  schemas:
+    UnstructuredRequest:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          description: Text to anonymize
+          example: "My name is John Smith and my email is john.smith@example.com. Call me at 555-1234."
+        return_entity_map:
+          type: boolean
+          description: Whether to return entity map for de-anonymization
+          default: false
+
+    UnstructuredResponse:
+      type: object
+      required:
+        - anonymized_text
+      properties:
+        anonymized_text:
+          type: string
+          description: Text with PII replaced by tokens
+          example: "My name is 753c4285-a8af-4d09-9345-11f43b0d8bc1 and my email is 2a3facf3-9853-4c7f-a592-91aaa847d315. Call me at 81428303-aed9-4e31-ab67-45d15ff1bc45."
+        entity_map:
+          type: object
+          description: Map of tokens to entity information (only if return_entity_map=true)
+          additionalProperties:
+            type: object
+            properties:
+              type:
+                type: string
+                description: Entity type (PERSON, EMAIL, PHONE, SSN, ADDRESS)
+              value:
+                type: string
+                description: Original PII value
+              start:
+                type: integer
+                description: Start position in original text
+              end:
+                type: integer
+                description: End position in original text
+              token:
+                type: string
+                description: Generated token
+          example:
+            "753c4285-a8af-4d09-9345-11f43b0d8bc1":
+              type: PERSON
+              value: John Smith
+              start: 11
+              end: 21
+              token: 753c4285-a8af-4d09-9345-11f43b0d8bc1
+
+    DeanonymizeRequest:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          description: Tokenized text to de-anonymize
+          example: "My name is 753c4285-a8af-4d09-9345-11f43b0d8bc1 and my email is 2a3facf3-9853-4c7f-a592-91aaa847d315."
+
+    DeanonymizeResponse:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          description: Text with tokens replaced by original PII values
+          example: "My name is John Smith and my email is john.smith@example.com."
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+          description: Service health status
+        policy_version:
+          type: string
+          description: Current policy version (timestamp)
+          example: "1772630468"
+
+    PolicyReloadResponse:
+      type: object
+      required:
+        - success
+      properties:
+        success:
+          type: boolean
+          description: Whether policy reload succeeded
+        policy_version:
+          type: string
+          description: New policy version if successful
+          example: "1772630500"
+        error:
+          type: string
+          description: Error message if reload failed
+          example: "Invalid YAML syntax"
+
+    Error:
+      type: object
+      properties:
+        detail:
+          type: string
+          description: Error message
+
+  responses:
+    Unauthorized:
+      description: Authentication required or invalid API key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            detail: Invalid authentication credentials
+
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              detail:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                    loc:
+                      type: array
+                      items:
+                        type: string
+                    msg:
+                      type: string
+                    input:
+                      type: object
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            detail: Internal server error
