@@ -41,6 +41,8 @@ Technical analysis and architectural decisions.
 ### 🚢 [Deployment](./deployment/)
 Deployment guides and test results.
 
+- **[Quality Report](./deployment/QUALITY_REPORT.md)** - Comprehensive quality assurance report
+
 ## 📈 Quick Stats
 
 | Metric | Value |
