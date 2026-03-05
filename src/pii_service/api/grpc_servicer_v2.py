@@ -214,12 +214,15 @@ class StructuredAnonymizerV2ServicerImpl(pb2_grpc.StructuredAnonymizerV2Servicer
                             record, system_id
                         )
                         
-                        if deanonymized.error:
+                        # Check if there are any errors (DeanonymizedRecord has 'errors' dict, not 'error' string)
+                        if deanonymized.errors:
                             error_count += 1
+                            # Combine all field errors into a single error message
+                            error_msg = "; ".join([f"{k}: {v}" for k, v in deanonymized.errors.items()])
                             results.append(pb2.DeanonymizeResult(
                                 record_id=record_id,
                                 deanonymized_data=b"",
-                                error=deanonymized.error,
+                                error=error_msg,
                             ))
                         else:
                             success_count += 1

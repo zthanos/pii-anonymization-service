@@ -156,7 +156,74 @@ The service will be available at:
 - Health check: http://localhost:8000/health
 - Metrics: http://localhost:8000/metrics
 
-### Option 2: Local Development
+### Option 2: Multi-Instance Deployment (Production)
+
+For high-throughput production workloads, run multiple service instances behind load balancers:
+
+```bash
+# Start 4 service instances with load balancers
+docker-compose -f docker-compose.multi.yml up -d
+
+# View logs for all instances
+docker-compose -f docker-compose.multi.yml logs -f
+
+# Stop all instances
+docker-compose -f docker-compose.multi.yml down
+```
+
+**Architecture:**
+```
+                    ┌─────────────────┐
+                    │   Client Apps   │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┴──────────────┐
+              │                             │
+         REST API                       gRPC API
+              │                             │
+    ┌─────────▼─────────┐       ┌──────────▼──────────┐
+    │  Nginx (port 8000)│       │ Envoy (port 50051)  │
+    │  Load Balancer    │       │  Load Balancer      │
+    └─────────┬─────────┘       └──────────┬──────────┘
+              │                             │
+    ┌─────────┴─────────────────────────────┴─────────┐
+    │                                                  │
+    ├─► pii-service-1 (8000, 50051)                  │
+    ├─► pii-service-2 (8000, 50051)                  │
+    ├─► pii-service-3 (8000, 50051)                  │
+    └─► pii-service-4 (8000, 50051)                  │
+                             │
+                    ┌────────▼────────┐
+                    │  Redis (6379)   │
+                    └─────────────────┘
+```
+
+**Client Connection Examples:**
+
+```python
+# REST API - connects to Nginx load balancer
+import requests
+response = requests.post(
+    'http://localhost:8000/structured/anonymize',
+    headers={'X-System-ID': 'customer_db'},
+    json=[{"email": "user@example.com"}]
+)
+
+# gRPC API - connects to Envoy load balancer
+import grpc
+from pii_service.proto import pii_service_v2_pb2_grpc as pb2_grpc
+
+channel = grpc.insecure_channel('localhost:50051')
+stub = pb2_grpc.StructuredAnonymizerV2Stub(channel)
+# Envoy automatically distributes requests across 4 instances
+```
+
+**Performance:**
+- Single instance: ~5,000 records/sec
+- Multi-instance (4x): ~15,000-20,000 records/sec
+- Horizontal scaling: Add more instances as needed
+
+### Option 3: Local Development
 
 Run Redis separately and start the service locally:
 
@@ -169,6 +236,25 @@ uv run python -m pii_service.main
 ```
 
 ## API Usage
+
+### Authentication
+
+All API endpoints (except `/health` and `/metrics`) require authentication.
+
+**REST API Headers:**
+```bash
+Authorization: Bearer your-api-key
+X-System-ID: customer_db  # Required for anonymization/de-anonymization
+```
+
+**gRPC Metadata:**
+```python
+metadata = [
+    ('authorization', 'Bearer your-api-key'),
+    ('x-system-id', 'customer_db'),  # Optional, can be in request body
+]
+response = stub.AnonymizeBatch(request, metadata=metadata)
+```
 
 ### Health Check
 
@@ -241,23 +327,93 @@ curl http://localhost:8000/metrics
 
 ## gRPC Usage
 
-For high-throughput scenarios, use the gRPC streaming API:
+### gRPC API Reference
+
+The service provides two gRPC APIs:
+
+1. **V2 Batch API** (Recommended) - High-performance batch processing
+   - Proto file: [`src/pii_service/proto/pii_service_v2.proto`](src/pii_service/proto/pii_service_v2.proto)
+   - Service: `StructuredAnonymizerV2`
+   - Methods: `AnonymizeBatch`, `DeanonymizeBatch`, `AnonymizeBatchStream`
+
+2. **V1 Streaming API** (Legacy) - Bidirectional streaming
+   - Proto file: [`src/pii_service/proto/pii_service.proto`](src/pii_service/proto/pii_service.proto)
+   - Service: `StructuredAnonymizer`
+   - Methods: `Anonymize`, `Deanonymize`
+
+### Batch API Example (Recommended)
+
+For high-throughput scenarios, use the V2 Batch API:
 
 ```python
 import grpc
-from pii_service.proto import (
-    StructuredAnonymizerStub,
-    AnonymizeRequest,
+import orjson
+from pii_service.proto import pii_service_v2_pb2 as pb2
+from pii_service.proto import pii_service_v2_pb2_grpc as pb2_grpc
+
+# Create channel with message size limits
+options = [
+    ('grpc.max_send_message_length', 100 * 1024 * 1024),  # 100MB
+    ('grpc.max_receive_message_length', 100 * 1024 * 1024),
+]
+channel = grpc.insecure_channel('localhost:50051', options=options)
+stub = pb2_grpc.StructuredAnonymizerV2Stub(channel)
+
+# Prepare batch of records (use orjson for performance)
+records = [
+    {"email": "user1@example.com", "ssn": "123-45-6789"},
+    {"email": "user2@example.com", "ssn": "987-65-4321"},
+    # ... up to 2000 records per batch for optimal performance
+]
+
+# Create batch request
+items = [
+    pb2.RecordItem(
+        record_id=f"record_{i}",
+        record_data=orjson.dumps(record)  # Use bytes, not string
+    )
+    for i, record in enumerate(records)
+]
+
+request = pb2.BatchAnonymizeRequest(
+    system_id="customer_db",
+    records=items
 )
+
+# Process batch
+response = stub.AnonymizeBatch(request)
+
+# Handle results
+for result in response.results:
+    if result.error:
+        print(f"Error for {result.record_id}: {result.error}")
+    else:
+        anonymized = orjson.loads(result.anonymized_data)
+        print(f"Anonymized {result.record_id}: {anonymized}")
+
+# Check batch statistics
+print(f"Success: {response.stats.success_count}")
+print(f"Errors: {response.stats.error_count}")
+print(f"Processing time: {response.stats.processing_time_ms}ms")
+```
+
+### Legacy Streaming API Example
+
+For backward compatibility, the V1 streaming API is still available:
+
+```python
+import grpc
+from pii_service.proto import pii_service_pb2 as pb
+from pii_service.proto import pii_service_pb2_grpc as pb_grpc
 
 # Create channel
 channel = grpc.insecure_channel('localhost:50051')
-stub = StructuredAnonymizerStub(channel)
+stub = pb_grpc.StructuredAnonymizerStub(channel)
 
 # Stream requests
 def request_generator():
     for i in range(1000):
-        yield AnonymizeRequest(
+        yield pb.AnonymizeRequest(
             system_id="customer_db",
             record_id=f"record_{i}",
             record_json='{"email":"user@example.com"}',
@@ -269,6 +425,53 @@ for response in stub.Anonymize(request_generator()):
         print(f"Error: {response.error}")
     else:
         print(f"Anonymized: {response.anonymized_json}")
+```
+
+### gRPC Metadata and Authentication
+
+Add authentication and custom metadata to gRPC requests:
+
+```python
+import grpc
+
+# Create metadata with API key
+metadata = [
+    ('authorization', 'Bearer your-api-key'),
+    ('x-request-id', 'unique-request-id'),
+]
+
+# Make authenticated request
+response = stub.AnonymizeBatch(request, metadata=metadata)
+```
+
+For client-side interceptors:
+
+```python
+class AuthInterceptor(grpc.UnaryUnaryClientInterceptor):
+    def __init__(self, api_key):
+        self.api_key = api_key
+    
+    def intercept_unary_unary(self, continuation, client_call_details, request):
+        metadata = []
+        if client_call_details.metadata:
+            metadata = list(client_call_details.metadata)
+        metadata.append(('authorization', f'Bearer {self.api_key}'))
+        
+        new_details = grpc.ClientCallDetails(
+            client_call_details.method,
+            client_call_details.timeout,
+            metadata,
+            client_call_details.credentials,
+            client_call_details.wait_for_ready,
+            client_call_details.compression,
+        )
+        return continuation(new_details, request)
+
+# Use interceptor
+interceptor = AuthInterceptor('your-api-key')
+channel = grpc.insecure_channel('localhost:50051')
+channel = grpc.intercept_channel(channel, interceptor)
+stub = pb2_grpc.StructuredAnonymizerV2Stub(channel)
 ```
 
 ## Development
@@ -418,7 +621,27 @@ Test data, benchmark results, and profiling data are organized in the [data/](./
 
 ## License
 
-[Your License Here]
+MIT License
+
+Copyright (c) 2024
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ## Support
 

@@ -77,6 +77,85 @@ systems:
       
       # Never expire tokens for analytics
       token_ttl_seconds: 0
+  
+  # HR system configuration - realistic production scenario
+  - system_id: "hr_system"
+    encryption_key_ref: "env:HR_SYSTEM_KEY"
+    
+    structured:
+      pii_fields:
+        # Employee identification
+        - name: "employee_id"
+          deterministic: true
+          token_format: "prefixed"
+          token_prefix: "EMP_"
+          nullable: false
+        
+        - name: "ssn"
+          deterministic: true
+          token_format: "deterministic"
+          nullable: false
+        
+        - name: "email"
+          deterministic: true
+          token_format: "uuid"
+          nullable: false
+        
+        - name: "phone"
+          deterministic: false
+          token_format: "uuid"
+          nullable: true
+        
+        # Personal information
+        - name: "first_name"
+          deterministic: false
+          token_format: "prefixed"
+          token_prefix: "NAME_"
+          nullable: false
+        
+        - name: "last_name"
+          deterministic: false
+          token_format: "prefixed"
+          token_prefix: "NAME_"
+          nullable: false
+        
+        - name: "date_of_birth"
+          deterministic: true
+          token_format: "deterministic"
+          nullable: false
+        
+        # Payroll information (can expose identity)
+        - name: "salary"
+          deterministic: false
+          token_format: "uuid"
+          nullable: false
+        
+        - name: "bank_account"
+          deterministic: true
+          token_format: "deterministic"
+          nullable: false
+        
+        # Position information (can expose identity for unique roles)
+        - name: "position"
+          deterministic: false
+          token_format: "prefixed"
+          token_prefix: "POS_"
+          nullable: false
+        
+        - name: "department"
+          deterministic: false
+          token_format: "prefixed"
+          token_prefix: "DEPT_"
+          nullable: false
+        
+        # Benefits information
+        - name: "emergency_contact"
+          deterministic: false
+          token_format: "uuid"
+          nullable: true
+      
+      # Keep HR tokens for 1 year
+      token_ttl_seconds: 31536000
 
 # Default system to use when client doesn't specify X-System-ID header
 default_system: "customer_db"

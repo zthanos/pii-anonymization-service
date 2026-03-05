@@ -36,6 +36,7 @@ services:
       POLICY_PATH: /app/policies/example_policy.yaml
       CUSTOMER_DB_KEY: ${CUSTOMER_DB_KEY:-}
       ANALYTICS_DB_KEY: ${ANALYTICS_DB_KEY:-}
+      HR_SYSTEM_KEY: ${HR_SYSTEM_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       LOG_LEVEL: ${LOG_LEVEL:-WARNING}
       API_KEY: ${API_KEY:-dev_api_key_12345}
@@ -72,6 +73,7 @@ services:
       POLICY_PATH: /app/policies/example_policy.yaml
       CUSTOMER_DB_KEY: ${CUSTOMER_DB_KEY:-}
       ANALYTICS_DB_KEY: ${ANALYTICS_DB_KEY:-}
+      HR_SYSTEM_KEY: ${HR_SYSTEM_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       LOG_LEVEL: ${LOG_LEVEL:-WARNING}
       API_KEY: ${API_KEY:-dev_api_key_12345}
@@ -108,6 +110,7 @@ services:
       POLICY_PATH: /app/policies/example_policy.yaml
       CUSTOMER_DB_KEY: ${CUSTOMER_DB_KEY:-}
       ANALYTICS_DB_KEY: ${ANALYTICS_DB_KEY:-}
+      HR_SYSTEM_KEY: ${HR_SYSTEM_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       LOG_LEVEL: ${LOG_LEVEL:-WARNING}
       API_KEY: ${API_KEY:-dev_api_key_12345}
@@ -144,6 +147,7 @@ services:
       POLICY_PATH: /app/policies/example_policy.yaml
       CUSTOMER_DB_KEY: ${CUSTOMER_DB_KEY:-}
       ANALYTICS_DB_KEY: ${ANALYTICS_DB_KEY:-}
+      HR_SYSTEM_KEY: ${HR_SYSTEM_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       LOG_LEVEL: ${LOG_LEVEL:-WARNING}
       API_KEY: ${API_KEY:-dev_api_key_12345}

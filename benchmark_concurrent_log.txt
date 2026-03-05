@@ -1,0 +1,13 @@
+=== HR CONCURRENT BENCHMARK ===
+Loading test data...
+Loaded 360000 records
+Workers: 16, Batch size: 2000
+Starting anonymization...
+Anonymization: 22.77s, 15,811 rec/sec
+  Success: 360000, Failed: 0
+Collected 360000 anonymized records for de-anonymization
+Starting de-anonymization...
+De-anonymization: 28.75s, 12,523 rec/sec
+  Success: 360000, Failed: 0
+Results saved to data/benchmark_results/hr_concurrent_benchmark.json
+=== BENCHMARK COMPLETE ===

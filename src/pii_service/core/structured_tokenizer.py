@@ -294,6 +294,11 @@ class StructuredTokenizer:
                         # Skip null nullable fields
                         continue
 
+                    # Determine value type for preservation
+                    value_type = type(value).__name__
+                    if value_type not in ("str", "int", "float", "bool"):
+                        value_type = "str"  # Default to string for other types
+
                     # Generate token
                     token = self.generate_token(
                         str(value),
@@ -303,10 +308,11 @@ class StructuredTokenizer:
                         field_config.token_prefix,
                     )
 
-                    # Encrypt original value
+                    # Encrypt original value with type information
                     encrypted_value = self.crypto_engine.encrypt(
                         str(value),
                         encryption_key,
+                        value_type,
                     )
 
                     # Prepare for batch storage
@@ -431,6 +437,11 @@ class StructuredTokenizer:
                                 # Skip null nullable fields
                                 continue
 
+                            # Determine value type for preservation
+                            value_type = type(value).__name__
+                            if value_type not in ("str", "int", "float", "bool"):
+                                value_type = "str"  # Default to string for other types
+
                             # Generate token
                             token = self.generate_token(
                                 str(value),
@@ -440,10 +451,11 @@ class StructuredTokenizer:
                                 field_config.token_prefix,
                             )
 
-                            # Encrypt original value
+                            # Encrypt original value with type information
                             encrypted_value = self.crypto_engine.encrypt(
                                 str(value),
                                 encryption_key,
+                                value_type,
                             )
 
                             # Prepare for batch storage
@@ -649,11 +661,21 @@ class StructuredTokenizer:
                             errors[field_name] = "Token not found or expired"
                             continue
 
-                        # Decrypt value
-                        original_value = self.crypto_engine.decrypt(
+                        # Decrypt value and get type information
+                        original_value_str, value_type = self.crypto_engine.decrypt(
                             encrypted_value,
                             encryption_key,
                         )
+
+                        # Convert back to original type
+                        if value_type == "int":
+                            original_value = int(original_value_str)
+                        elif value_type == "float":
+                            original_value = float(original_value_str)
+                        elif value_type == "bool":
+                            original_value = original_value_str.lower() == "true"
+                        else:  # "str" or default
+                            original_value = original_value_str
 
                         # Replace token with original value
                         self.set_field_value(
