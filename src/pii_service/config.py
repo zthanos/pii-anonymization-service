@@ -14,12 +14,6 @@ class Settings(BaseSettings):
     # Policy configuration
     POLICY_PATH: str = "policies/example_policy.yaml"
 
-    # LLM configuration
-    ANTHROPIC_API_KEY: Optional[str] = None
-    OPENAI_API_KEY: Optional[str] = "not-needed"
-    OPENAI_BASE_URL: Optional[str] = "http://host.docker.internal:1234/v1"
-    OPENAI_MODEL: Optional[str] = "openai/gpt-oss-20b"
-
     # Logging configuration
     LOG_LEVEL: str = "INFO"
 

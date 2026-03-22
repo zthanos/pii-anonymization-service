@@ -1,5 +1,6 @@
 """Benchmark script for structured data anonymization performance testing."""
 
+import argparse
 import asyncio
 import time
 import psutil
@@ -7,10 +8,10 @@ import statistics
 from typing import List, Dict, Any
 import json
 from dataclasses import dataclass, asdict
+from pathlib import Path
 import httpx
 import sys
 import grpc
-import sys
 import os
 
 # Add proto directory to path
@@ -506,32 +507,40 @@ class GRPCBenchmark:
 
 async def main():
     """Run benchmark suite."""
+    parser = argparse.ArgumentParser(description="Run structured REST and gRPC benchmarks")
+    parser.add_argument("--base-url", default="http://localhost:8000")
+    parser.add_argument("--grpc-host", default="localhost:50051")
+    parser.add_argument("--system-id", default="customer_db")
+    parser.add_argument("--api-key", default="test_key")
+    parser.add_argument("--output", default="benchmark_results.json")
+    args = parser.parse_args()
+
     # Check if service is running
     print("Checking if service is running...")
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get("http://localhost:8000/health")
+            response = await client.get(f"{args.base_url.rstrip('/')}/health")
             if response.status_code != 200:
                 print("Error: Service health check failed")
                 print(f"Status code: {response.status_code}")
                 sys.exit(1)
             print("Service is running ✓\n")
     except Exception as e:
-        print(f"Error: Cannot connect to service at http://localhost:8000")
+        print(f"Error: Cannot connect to service at {args.base_url}")
         print(f"Details: {e}")
         print("\nPlease start the service with: docker-compose up -d")
         sys.exit(1)
     
     # Initialize benchmarks
     rest_benchmark = StructuredBenchmark(
-        base_url="http://localhost:8000",
-        system_id="customer_db",
-        api_key="test_key"
+        base_url=args.base_url,
+        system_id=args.system_id,
+        api_key=args.api_key
     )
     
     grpc_benchmark = GRPCBenchmark(
-        grpc_host="localhost:50051",
-        system_id="customer_db"
+        grpc_host=args.grpc_host,
+        system_id=args.system_id
     )
     
     try:
@@ -686,7 +695,9 @@ async def main():
                 print(f"  gRPC p95 Latency: {grpc_result.latency_p95_ms:.2f}ms")
         
         # Save results to JSON
-        with open("benchmark_results.json", "w") as f:
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with output_path.open("w", encoding="utf-8") as f:
             json.dump({
                 "rest_anonymization": [asdict(r) for r in anonymization_results],
                 "grpc_anonymization": [asdict(r) for r in grpc_results],
@@ -694,7 +705,7 @@ async def main():
             }, f, indent=2)
         
         print(f"\n{'='*60}")
-        print("Benchmark results saved to benchmark_results.json")
+        print(f"Benchmark results saved to {output_path}")
         print(f"{'='*60}")
         
     finally:

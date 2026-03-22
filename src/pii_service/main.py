@@ -12,7 +12,6 @@ from .core.token_store import TokenStore
 from .core.crypto_engine import CryptoEngine
 from .core.structured_tokenizer import StructuredTokenizer
 from .core.unstructured_tokenizer import UnstructuredTokenizer
-from .core.llm_client import LLMClient
 from .api.app import create_app
 from .api.grpc_server import create_grpc_server, start_grpc_server, stop_grpc_server
 from .api.grpc_server_v2 import serve_v2
@@ -52,14 +51,6 @@ async def initialize_components():
     crypto_engine = CryptoEngine()
     logger.info("crypto_engine_initialized")
 
-    # Initialize LLMClient
-    llm_client = LLMClient(
-        base_url=settings.OPENAI_BASE_URL,
-        model=settings.OPENAI_MODEL,
-        api_key=settings.OPENAI_API_KEY,
-    )
-    logger.info("llm_client_initialized")
-
     # Initialize StructuredTokenizer
     structured_tokenizer = StructuredTokenizer(
         policy_loader=policy_loader,
@@ -73,7 +64,6 @@ async def initialize_components():
         policy_loader=policy_loader,
         token_store=token_store,
         crypto_engine=crypto_engine,
-        llm_client=llm_client,
     )
     logger.info("unstructured_tokenizer_initialized")
 

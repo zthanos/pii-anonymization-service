@@ -47,16 +47,65 @@ class UnstructuredConfig(BaseModel):
     """Configuration for unstructured data tokenization.
     
     Attributes:
-        llm_model: Anthropic model identifier for entity extraction
-        entity_types: List of PII entity types to extract
-        rate_limit_per_minute: Maximum LLM API calls per minute per client
+        detector: Detector strategy for unstructured processing
         max_text_length: Maximum text length in characters
     """
 
-    llm_model: str = "claude-3-haiku-20240307"
-    entity_types: List[str]
-    rate_limit_per_minute: int = Field(default=100, gt=0)
+    class PrefilterConfig(BaseModel):
+        enabled: bool = True
+        min_length: int = Field(default=8, ge=0)
+
+    class SemanticDetectorConfig(BaseModel):
+        provider: Literal["huggingface"] = "huggingface"
+        model: Optional[str] = None
+        threshold: float = Field(default=0.85, ge=0.0, le=1.0)
+        enabled_for: List[str] = Field(default_factory=list)
+
+    class OverlapResolutionConfig(BaseModel):
+        strategy: Literal["longest_match"] = "longest_match"
+
+    class EntityRule(BaseModel):
+        type: str
+        detection: List[Literal["deterministic", "semantic"]] = Field(
+            default_factory=list
+        )
+        action: Literal["tokenize", "redact"] = "tokenize"
+        min_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+
+    detector: Literal["deterministic", "hybrid", "semantic"] = "hybrid"
     max_text_length: int = Field(default=50000, gt=0)
+    prefilter: PrefilterConfig = Field(default_factory=PrefilterConfig)
+    semantic_detector: Optional[SemanticDetectorConfig] = None
+    entities: List[EntityRule]
+    overlap_resolution: OverlapResolutionConfig = Field(
+        default_factory=OverlapResolutionConfig
+    )
+
+    @model_validator(mode="after")
+    def validate_entity_configuration(self) -> "UnstructuredConfig":
+        """Validate detector/entity consistency and backfill semantic config."""
+        if self.detector in {"semantic", "hybrid"} and self.semantic_detector is None:
+            semantic_entities = [
+                entity.type
+                for entity in self.entities
+                if "semantic" in entity.detection
+            ]
+            if semantic_entities:
+                self.semantic_detector = self.SemanticDetectorConfig(
+                    enabled_for=semantic_entities
+                )
+
+        if self.detector == "deterministic" and any(
+            "semantic" in entity.detection for entity in self.entities
+        ):
+            raise ValueError("deterministic detector cannot be used with semantic entity rules")
+
+        if self.detector == "semantic" and any(
+            "deterministic" in entity.detection for entity in self.entities
+        ):
+            raise ValueError("semantic detector cannot be used with deterministic entity rules")
+
+        return self
 
 
 class SystemConfig(BaseModel):
