@@ -240,6 +240,36 @@ These scripts:
 - warm up the unstructured detector path before measuring
 - save timestamped JSON results under `data/benchmark_results`
 
+### Unstructured quality check
+
+To validate detection quality on known text samples, use:
+
+```powershell
+.\scripts\Run-UnstructuredQualityCheck.ps1 `
+  -Text "Ο Γιάννης Παπαδόπουλος έχει email user@example.com και τηλέφωνο 6912345678" `
+  -ExpectedValue "Γιάννης Παπαδόπουλος" `
+  -ExpectedValue "user@example.com" `
+  -ExpectedValue "6912345678"
+```
+
+You can also use files:
+
+```powershell
+.\scripts\Run-UnstructuredQualityCheck.ps1 `
+  -TextPath .\data\sample_text.txt `
+  -ExpectedValuesPath .\data\expected_values.json `
+  -OutputPath .\data\benchmark_results\unstructured-quality-report.json
+```
+
+The quality check reports:
+
+- matched expected values
+- missed expected values
+- unexpected tokenized values
+- overall success rate
+
+This is useful for catching regressions in the unstructured detector pipeline separately from latency/throughput SLAs.
+
 ### Direct benchmark commands
 
 ```bash

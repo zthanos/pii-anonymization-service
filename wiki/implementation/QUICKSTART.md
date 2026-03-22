@@ -103,7 +103,19 @@ Notes:
 - The first unstructured request can be slower because the semantic model may load or download.
 - Unstructured is currently REST-only.
 
-## Step 7: Run Benchmarks
+## Step 7: Run Unstructured Quality Check
+
+```powershell
+.\scripts\Run-UnstructuredQualityCheck.ps1 `
+  -Text "Ο Γιάννης Παπαδόπουλος έχει email user@example.com και τηλέφωνο 6912345678" `
+  -ExpectedValue "Γιάννης Παπαδόπουλος" `
+  -ExpectedValue "user@example.com" `
+  -ExpectedValue "6912345678"
+```
+
+This gives you a quick success-rate check for known expected detections before moving on to performance measurements.
+
+## Step 8: Run Benchmarks
 
 Recommended clean benchmark entrypoints on Windows PowerShell:
 

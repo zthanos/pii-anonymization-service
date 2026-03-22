@@ -51,7 +51,47 @@ class StructuredBenchmark:
         self.base_url = base_url
         self.system_id = system_id
         self.api_key = api_key
-        self.client = httpx.AsyncClient(timeout=30.0)
+        self.client = httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0, connect=10.0),
+            limits=httpx.Limits(max_keepalive_connections=200, max_connections=400),
+        )
+
+    async def _post_with_retry(
+        self,
+        path: str,
+        payload: list[Dict[str, Any]],
+        attempts: int = 3,
+    ) -> httpx.Response:
+        """Send a POST request with lightweight retry for transient transport errors."""
+        last_error: Exception | None = None
+
+        for attempt in range(1, attempts + 1):
+            try:
+                response = await self.client.post(
+                    f"{self.base_url}{path}",
+                    json=payload,
+                    headers={
+                        "X-System-ID": self.system_id,
+                        "Authorization": f"Bearer {self.api_key}",
+                    },
+                )
+                response.raise_for_status()
+                return response
+            except (
+                httpx.ConnectError,
+                httpx.ConnectTimeout,
+                httpx.ReadTimeout,
+                httpx.RemoteProtocolError,
+            ) as exc:
+                last_error = exc
+                if attempt == attempts:
+                    break
+                await asyncio.sleep(0.1 * attempt)
+            except Exception:
+                raise
+
+        assert last_error is not None
+        raise last_error
     
     async def generate_test_record(self) -> Dict[str, Any]:
         """
@@ -88,15 +128,10 @@ class StructuredBenchmark:
         start = time.perf_counter()
         
         try:
-            response = await self.client.post(
-                f"{self.base_url}/structured/anonymize",
-                json=[record],
-                headers={
-                    "X-System-ID": self.system_id,
-                    "Authorization": f"Bearer {self.api_key}",
-                },
+            response = await self._post_with_retry(
+                path="/structured/anonymize",
+                payload=[record],
             )
-            response.raise_for_status()
             
             end = time.perf_counter()
             
@@ -124,15 +159,10 @@ class StructuredBenchmark:
         start = time.perf_counter()
         
         try:
-            response = await self.client.post(
-                f"{self.base_url}/structured/deanonymize",
-                json=[record],
-                headers={
-                    "X-System-ID": self.system_id,
-                    "Authorization": f"Bearer {self.api_key}",
-                },
+            response = await self._post_with_retry(
+                path="/structured/deanonymize",
+                payload=[record],
             )
-            response.raise_for_status()
             
             end = time.perf_counter()
             return (end - start) * 1000  # Convert to milliseconds

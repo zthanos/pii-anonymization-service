@@ -58,6 +58,16 @@ The PowerShell wrappers in [scripts](/C:/Users/thano/projects/anomymization/scri
 .\scripts\Run-UnstructuredMultiBenchmark.ps1
 ```
 
+### Unstructured quality validation
+
+```powershell
+.\scripts\Run-UnstructuredQualityCheck.ps1 `
+  -Text "Ο Γιάννης Παπαδόπουλος έχει email user@example.com και τηλέφωνο 6912345678" `
+  -ExpectedValue "Γιάννης Παπαδόπουλος" `
+  -ExpectedValue "user@example.com" `
+  -ExpectedValue "6912345678"
+```
+
 ## What The Scripts Do
 
 Each script:
@@ -68,6 +78,13 @@ Each script:
 - waits until `http://localhost:8000/health` returns `200`
 - for unstructured, sends a warm-up request before the benchmark
 - writes timestamped JSON results to `data/benchmark_results`
+
+The quality script checks correctness rather than throughput:
+
+- sends a plain text sample to `/unstructured/anonymize`
+- compares the response against expected values
+- calculates matched, missed, unexpected detections, and overall success rate
+- optionally saves a JSON report
 
 ## Direct Benchmark Commands
 
@@ -94,6 +111,25 @@ uv run python benchmarks/benchmark_unstructured.py \
   --throughput-sla 200 \
   --p95-sla-ms 150 \
   --output data/benchmark_results/unstructured-manual.json
+```
+
+### Unstructured quality check
+
+```powershell
+.\scripts\Run-UnstructuredQualityCheck.ps1 `
+  -TextPath .\data\sample_text.txt `
+  -ExpectedValuesPath .\data\expected_values.json `
+  -OutputPath .\data\benchmark_results\unstructured-quality-report.json
+```
+
+Example expected values file:
+
+```json
+[
+  "user@example.com",
+  "6912345678",
+  { "value": "Γιάννης Παπαδόπουλος", "type": "PERSON" }
+]
 ```
 
 ## Important Notes For Unstructured Benchmarks
@@ -131,6 +167,8 @@ Use these numbers to track:
 - single vs multi-instance scaling behavior
 
 Do not compare structured and unstructured throughput directly as if they were the same workload shape.
+
+For correctness/regression tracking, use the quality check script in parallel with the performance benchmarks.
 
 ## Troubleshooting
 
