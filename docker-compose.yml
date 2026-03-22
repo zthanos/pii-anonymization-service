@@ -40,9 +40,7 @@ services:
       # Encryption keys (generate with scripts/generate_key.py)
       CUSTOMER_DB_KEY: ${CUSTOMER_DB_KEY:-}
       ANALYTICS_DB_KEY: ${ANALYTICS_DB_KEY:-}
-      
-      # LLM API configuration
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      HR_SYSTEM_KEY: ${HR_SYSTEM_KEY:-}
       
       # Logging
       LOG_LEVEL: ${LOG_LEVEL:-INFO}

@@ -1,77 +1,80 @@
 # Quick Start Guide
 
-Get the PII Anonymization Service running in 5 minutes.
+Get the service running quickly with the current structured and unstructured architecture.
 
 ## Prerequisites
 
-- Docker and Docker Compose installed
-- Anthropic API key (optional, for unstructured data tokenization)
+- Docker and Docker Compose
+- UV
+
+Optional for local unstructured semantic detection outside Docker:
+
+```bash
+uv sync --extra unstructured-local
+```
 
 ## Step 1: Generate Encryption Keys
 
 ```bash
-# Generate encryption keys
 uv run python scripts/generate_key.py
 ```
 
-Copy the output keys for the next step.
+You need keys for all systems in the example policy:
 
-## Step 2: Configure Environment
+- `CUSTOMER_DB_KEY`
+- `ANALYTICS_DB_KEY`
+- `HR_SYSTEM_KEY`
 
-Create a `.env` file in the project root:
+## Step 2: Configure `.env`
 
-```bash
-# Copy the example
-cp .env.example .env
+Copy [.env.example](/C:/Users/thano/projects/anomymization/.env.example) to `.env` and set at least:
 
-# Edit .env and add your keys
-nano .env  # or use your favorite editor
+```env
+CUSTOMER_DB_KEY=...
+ANALYTICS_DB_KEY=...
+HR_SYSTEM_KEY=...
+API_KEY=test_api_key_12345
+REDIS_PASSWORD=redis_dev_password
 ```
-
-Required variables:
-- `CUSTOMER_DB_KEY` - Paste the generated key
-- `ANALYTICS_DB_KEY` - Paste the generated key
-- `ANTHROPIC_API_KEY` - Your Anthropic API key (optional)
-- `API_KEY` - Set a secure API key for authentication
 
 ## Step 3: Start the Service
 
-```bash
-# Start with Docker Compose
-docker-compose up -d
+Single instance:
 
-# Check logs
-docker-compose logs -f pii-service
+```bash
+docker compose up -d --build
+docker compose logs -f pii-service
 ```
 
-The service will be available at:
-- REST API: http://localhost:8000
-- gRPC: localhost:50051
+Multi instance:
 
-## Step 4: Test the Service
+```bash
+docker compose -f docker-compose.multi.yml up -d --build
+docker compose -f docker-compose.multi.yml logs -f
+```
 
-### Health Check
+## Step 4: Verify Health
 
 ```bash
 curl http://localhost:8000/health
 ```
 
 Expected response:
+
 ```json
 {
   "status": "healthy",
-  "redis_connected": true,
-  "policy_version": "1234567890"
+  "policy_version": "..."
 }
 ```
 
-### Anonymize Structured Data
+## Step 5: Test Structured Anonymization
 
 ```bash
 curl -X POST http://localhost:8000/structured/anonymize \
   -H "Content-Type: application/json" \
   -H "X-System-ID: customer_db" \
-  -H "Authorization: Bearer your-api-key" \
+  -H "Authorization: Bearer test_api_key_12345" \
   -d '[
     {
       "email": "john.doe@example.com",
@@ -81,92 +84,77 @@ curl -X POST http://localhost:8000/structured/anonymize \
   ]'
 ```
 
-Expected response (NDJSON):
-```json
-{"record":{"email":"550e8400-e29b-41d4-a716-446655440000","name":"John Doe","ssn":"a1b2c3d4e5f6...","_pii_anonymized":true},"token_ids":["550e8400-...","a1b2c3d4..."],"error":null}
-```
-
-### De-anonymize Data
+## Step 6: Test Unstructured Anonymization
 
 ```bash
-curl -X POST http://localhost:8000/structured/deanonymize \
+curl -X POST http://localhost:8000/unstructured/anonymize \
   -H "Content-Type: application/json" \
   -H "X-System-ID: customer_db" \
-  -H "Authorization: Bearer your-api-key" \
-  -d '[
-    {
-      "email": "550e8400-e29b-41d4-a716-446655440000",
-      "ssn": "a1b2c3d4e5f6..."
-    }
-  ]'
+  -H "Authorization: Bearer test_api_key_12345" \
+  -d '{
+    "text": "Ο Γιάννης Παπαδόπουλος έχει email user@example.com και τηλέφωνο 6912345678",
+    "return_entity_map": false
+  }'
 ```
 
-## Step 5: Monitor the Service
+Notes:
 
-### View Metrics
+- Unstructured uses a local detector pipeline, not an external LLM API.
+- The first unstructured request can be slower because the semantic model may load or download.
+- Unstructured is currently REST-only.
 
-```bash
-curl http://localhost:8000/metrics
+## Step 7: Run Unstructured Quality Check
+
+```powershell
+.\scripts\Run-UnstructuredQualityCheck.ps1 `
+  -Text "Ο Γιάννης Παπαδόπουλος έχει email user@example.com και τηλέφωνο 6912345678" `
+  -ExpectedValue "Γιάννης Παπαδόπουλος" `
+  -ExpectedValue "user@example.com" `
+  -ExpectedValue "6912345678"
 ```
 
-### View Logs
+This gives you a quick success-rate check for known expected detections before moving on to performance measurements.
 
-```bash
-docker-compose logs -f pii-service
+## Step 8: Run Benchmarks
+
+Recommended clean benchmark entrypoints on Windows PowerShell:
+
+```powershell
+.\scripts\Run-StructuredSingleBenchmark.ps1
+.\scripts\Run-StructuredMultiBenchmark.ps1
+.\scripts\Run-UnstructuredSingleBenchmark.ps1
+.\scripts\Run-UnstructuredMultiBenchmark.ps1
 ```
+
+These scripts reset Redis state before the run, so the results are more consistent.
 
 ## Troubleshooting
 
-### Service won't start
+### Service does not start
 
-1. Check Redis is running:
-   ```bash
-   docker-compose ps redis
-   ```
-
-2. Check environment variables:
-   ```bash
-   docker-compose config
-   ```
-
-3. View detailed logs:
-   ```bash
-   docker-compose logs pii-service
-   ```
-
-### Authentication errors
-
-Make sure you're using the correct API key:
-```bash
-# Check your .env file
-grep API_KEY .env
-
-# Use it in requests
-curl -H "Authorization: Bearer your-api-key-here" ...
-```
-
-### Redis connection errors
-
-1. Check Redis is healthy:
-   ```bash
-   docker-compose exec redis redis-cli ping
-   ```
-
-2. Verify Redis password matches in docker-compose.yml and .env
-
-## Next Steps
-
-- Read the full [README.md](README.md) for detailed documentation
-- Configure your own policy in `policies/example_policy.yaml`
-- Set up TLS for production use
-- Run benchmarks to validate performance
-
-## Stopping the Service
+Check resolved Compose config:
 
 ```bash
-# Stop the service
-docker-compose down
-
-# Stop and remove volumes (clears Redis data)
-docker-compose down -v
+docker compose config
 ```
+
+Common cause:
+
+- missing `HR_SYSTEM_KEY`
+
+### Unstructured returns detector/model errors
+
+Inside Docker, the image already installs the `unstructured-local` dependencies. For local host execution, make sure you ran:
+
+```bash
+uv sync --extra unstructured-local
+```
+
+### Health returns `503`
+
+This usually means Redis is still loading its dataset. Wait a bit and retry `/health`.
+
+## Next Reading
+
+- [README](/C:/Users/thano/projects/anomymization/README.md)
+- [Benchmarking Guide](/C:/Users/thano/projects/anomymization/wiki/benchmarks/BENCHMARKING.md)

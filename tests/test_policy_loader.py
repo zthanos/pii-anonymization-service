@@ -38,10 +38,20 @@ systems:
           nullable: true
       token_ttl_seconds: 86400
     unstructured:
-      llm_model: "claude-3-haiku-20240307"
-      entity_types: ["PERSON", "EMAIL", "PHONE"]
-      rate_limit_per_minute: 100
+      detector: "hybrid"
       max_text_length: 50000
+      semantic_detector:
+        provider: "huggingface"
+        model: "pprokopidis/elNER18-bert-base-greek-uncased-v1-bs8-e150-lr5e-06"
+        threshold: 0.85
+        enabled_for: ["PERSON"]
+      entities:
+        - type: "PERSON"
+          detection: ["semantic"]
+          action: "redact"
+        - type: "EMAIL"
+          detection: ["deterministic"]
+          action: "tokenize"
 
   - system_id: "analytics_db"
     encryption_key_ref: "file:/tmp/test_key.bin"

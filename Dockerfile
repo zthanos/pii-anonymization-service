@@ -12,8 +12,9 @@ WORKDIR /app
 # Copy dependency files and README (required by pyproject.toml)
 COPY pyproject.toml uv.lock README.md ./
 
-# Install dependencies into a virtual environment
-RUN uv sync --frozen --no-dev
+# Install dependencies into a virtual environment, including local
+# unstructured detector dependencies used by the semantic pipeline.
+RUN uv sync --frozen --no-dev --extra unstructured-local
 
 # Copy application source
 COPY src ./src

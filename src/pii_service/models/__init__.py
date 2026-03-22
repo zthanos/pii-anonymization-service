@@ -1,6 +1,6 @@
 """Data models and schemas."""
 
-from .entity import EntitySpan
+from .entity import DetectionFinding, EntitySpan
 from .policy import (
     PIIField,
     Policy,
@@ -10,6 +10,7 @@ from .policy import (
 )
 
 __all__ = [
+    "DetectionFinding",
     "EntitySpan",
     "PIIField",
     "Policy",
